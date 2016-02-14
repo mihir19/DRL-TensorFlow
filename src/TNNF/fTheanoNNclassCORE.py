@@ -8,50 +8,68 @@
 # External libraries
 # ---------------------------------------------------------------------#
 
+'''
+For reference of dimshuffle and how to use it:
+import numpy
+import theano
+
+x = theano.shared(numpy.arange(10))
+print x
+print x.dimshuffle('x', 0).type
+print x.dimshuffle(0, 'x').type
+print x.reshape((1, x.shape[0])).type
+print x.reshape((x.shape[0], 1)).type
+
+f = theano.function([], outputs=[x, x.dimshuffle('x', 0), x.reshape((1, x.shape[0]))])
+theano.printing.debugprint(f)
+'''
 
 from PIL import Image, ImageOps, ImageFilter
 import numpy as np
 from numpy import *
 from numpy import dot, sqrt, diag
 from numpy.linalg import eigh
-from theano.tensor.shared_randomstreams import RandomStreams
-import theano
-import theano.tensor as T
+#from theano.tensor.shared_randomstreams import RandomStreams
+#import theano
+#import theano.tensor as T
+import tensorflow as T
 import cPickle
 import time  # import datetime
 import matplotlib.pyplot as plt
 from fImageWorkerCORE import *
-from pylearn2.sandbox.cuda_convnet.filter_acts import FilterActs
-from pylearn2.sandbox.cuda_convnet.pool import MaxPool
-from theano.sandbox.cuda.basic_ops import gpu_contiguous
-from theano.tensor.signal import downsample
+#from pylearn2.sandbox.cuda_convnet.filter_acts import FilterActs
+#from pylearn2.sandbox.cuda_convnet.pool import MaxPool
+#from theano.sandbox.cuda.basic_ops import gpu_contiguous
+#from theano.tensor.signal import downsample
 
 
 #---------------------------------------------------------------------#
 # Activation functions
 #---------------------------------------------------------------------#
 
-
+# Start of Porting
 class FunctionModel(object):
     @staticmethod  # FunctionModel.Sigmoid
     #def Sigmoid(W, X, B, *args):
     def Sigmoid(z, *args):
         #z = T.dot(W, X) + B.dimshuffle(0, 'x')
-        a = 1 / (1 + T.exp(-z))
+        a = 1 / (1 + T.exp(-z, name=None))
         return a
-
+#Sigmoid is perfect
     @staticmethod  # FunctionModel.Sigmoid
     #def ReLU(W, X, B, *args):
     def ReLU(z, *args):
         #z = T.dot(W, X) + B.dimshuffle(0, 'x')
-        a = T.switch(T.gt(z, 0), z, 0)
+        #a = T.switch(T.gt(z, 0), z, 0)
+        a = T.greater(z, 0, name=None)
         return a
 
     @staticmethod  # FunctionModel.Sigmoid
     #def ReLU(W, X, B, *args):
     def LReLU(z, *args):
         #z = T.dot(W, X) + B.dimshuffle(0, 'x')
-        a = T.switch(T.gt(z, 0), z, z * 0.01)
+        #a = T.switch(T.gt(z, 0), z, z * 0.01)
+        a = T.greater(z, z * 0.01, name=None)
         return a
 
     @staticmethod  # FunctionModel.Sigmoid
@@ -64,7 +82,7 @@ class FunctionModel(object):
     #def Tanh(W, X, B, *args):
     def Tanh(z, *args):
         #z = T.dot(W, X) + B
-        a = (T.exp(z) - T.exp(-z)) / (T.exp(z) + T.exp(-z))
+        a = (T.exp(z, name=None) - T.exp(-z, name=None)) / (T.exp(z, name=None) + T.exp(-z, name=None))
         return a
 
     @staticmethod  # FunctionModel.SoftMax
@@ -73,7 +91,7 @@ class FunctionModel(object):
         #z = T.dot(W, X) + B.dimshuffle(0, 'x')
         #numClasses = W.get_value().shape[0]
         #numClasses = T.shape(W)[0]
-        numClasses = T.shape(z)[0]
+        numClasses = T.shape(z, name=None)[0]
         # ___CLASSIC___ #
         # a = T.exp(z) / T.dot(T.alloc(1.0, numClasses, 1), [T.sum(T.exp(z), axis = 0)])
         # _____________ #
@@ -81,8 +99,12 @@ class FunctionModel(object):
         # a = T.exp(z - T.log(T.sum(T.exp(z))))
         # a = T.exp(z - T.log(T.dot(T.alloc(1.0, numClasses, 1), [T.sum(T.exp(z), axis = 0)])))		#FIXED?
         # ___ANTINAN___ #
-        z_max = T.max(z, axis=0)
-        a = T.exp(z - T.log(T.dot(T.alloc(1.0, numClasses, 1), [T.sum(T.exp(z - z_max), axis=0)])) - z_max)
+        #z_max = T.max(z, axis=0)
+        z_max = T.reduce_max(z, reduction_indices=[0], keep_dims=False, name=None)
+        #a = T.exp(z - T.log(T.dot(T.alloc(1.0, numClasses, 1), [T.sum(T.exp(z - z_max), axis=0)])) - z_max)
+        a = T.exp(z - T.log(T.matmul(T.constant(1.0, shape=[numClasses, 1]), [T.reduce_sum(T.exp(z - z_max), reduction_indices=[0])], name=None), name=None)- z_max, name=None)
+
+
         # _____________ #
         # Some hacks for fixing float32 GPU problem
         # a = T.clip(a, float(np.finfo(np.float32).tiny), float(np.finfo(np.float32).max))
@@ -98,10 +120,10 @@ class FunctionModel(object):
     #def MaxOut(W, X, B, *args):
     def MaxOut(z, *args):
         #z = T.dot(W, X) + B.dimshuffle(0, 'x')
-        d = T.shape(z)
+        d = T.shape(z, name=None)
         n_elem = args[0]
-        z = z.reshape((d[0] / n_elem, n_elem, d[1]))
-        a = T.max(z, axis=1)
+        z = z.reshape((d[0] / n_elem, (n_elem, d[1])))
+        a = T.reduce_max(z, reduction_indices=[1], keep_dims=False, name=None)
         return a
 
 
@@ -152,38 +174,48 @@ class LayerNN(object):
         #weights = weights / weights_max
 
         #w = theano.shared((weights * 2 * random - random).astype(theano.config.floatX), name="w%s" % (layerNum + 1))
-        w = theano.shared((weights * 0.01).astype(theano.config.floatX), name="w%s" % (layerNum + 1))
+        #w = theano.shared((weights * 0.01).astype(theano.config.floatX), name="w%s" % (layerNum + 1))
+        # if dtype doesn't work try using astype in initializer
+        w = T.get_variable(name="w%s" % (layerNum + 1), shape=None, dtype=T.float32, initializer=T.constant_initializer((weights * 0.01)))
 
         W['w'] = w
 
         if self.activation != FunctionModel.MaxOut:
-            b = theano.shared(np.tile(0.1, (self.size_out,)).astype(theano.config.floatX), name="b%s" % (layerNum + 1))
+            #b = theano.shared(np.tile(0.1, (self.size_out,)).astype(theano.config.floatX), name="b%s" % (layerNum + 1))
+            b = T.get_variable(name="b%s" % (layerNum + 1), shape=None, dtype=T.float32, initializer=T.constant_initializer(np.tile(0.1, (self.size_out,))))
         else:
-            b = theano.shared(np.tile(0.1, (self.size_out * self.pool_size,)).astype(theano.config.floatX),
-                              name="b%s" % (layerNum + 1))
+            #b = theano.shared(np.tile(0.1, (self.size_out * self.pool_size,)).astype(theano.config.floatX), name="b%s" % (layerNum + 1))
+            b = T.get_variable(name="b%s" % (layerNum + 1), shape=None, dtype=T.float32, initializer=T.constant_initializer(np.tile(0.1, (self.size_out * self.pool_size,))))
         W['b'] = b
         net.varWeights.append(W)
 
     def compileDropout(self, net, R):
         if self.dropout:
-            net.dropOutVectors.append(R.binomial(p=self.dropout, size=(self.size_in,)).astype(theano.config.floatX))
+            #There might be a problem in calling binomial
+            net.dropOutVectors.append(R.np.random.binomial(p=self.dropout, size=(self.size_in,)).astype(np.float32))
         else:
             net.dropOutVectors.append(1.0)
 
     def compileSparsity(self, net, layerNum, num):
-        sprs = T.sum(net.varArrayA[layerNum], axis=1) / (num + 0.0)
+        #sprs = T.sum(net.varArrayA[layerNum], axis=1) / (num + 0.0)
+        sprs = T.reduce_sum(net.varArrayA[layerNum], reduction_indices=[1], keep_dims=False, name=None) / (num + 0.0)
         epsilon = 1e-20
-        sprs = T.clip(sprs, epsilon, 1 - epsilon)
+        sprs = T.clip_by_value(sprs, epsilon, 1 - epsilon, name=None)
+        '''
         KL = T.sum(
             self.sparsity * T.log(self.sparsity / sprs) + (1 - self.sparsity) * T.log((1 - self.sparsity) / (1 - sprs)))
+        net.regularize.append(self.beta * KL)
+        '''
+        KL = T.reduce_sum(
+            self.sparsity * T.log(self.sparsity / sprs, name=None) + (1 - self.sparsity) * T.log((1 - self.sparsity) / (1 - sprs), name=None), reduction_indices=None, keep_dims=False, name=None)
         net.regularize.append(self.beta * KL)
 
     def compileActivation(self, net, layerNum):
         variable = net.x if layerNum == 0 else net.varArrayA[layerNum - 1]
 
         #W x X + B
-        z = T.dot(net.varWeights[layerNum]['w'], variable * (net.dropOutVectors[layerNum].dimshuffle(0, 'x') if self.dropout else 1.0)) + net.varWeights[layerNum]['b'].dimshuffle(0, 'x')
-
+        #z = T.dot(net.varWeights[layerNum]['w'], variable * (net.dropOutVectors[layerNum].dimshuffle(0, 'x') if self.dropout else 1.0)) + net.varWeights[layerNum]['b'].dimshuffle(0, 'x')
+        z = T.matmul((net.varWeights[layerNum]['w']), (variable * (T.expand_dims(net.dropOutVectors[layerNum], 1) if self.dropout else 1.0))) + T.expand_dims(net.varWeights[layerNum]['b'], 1)
         a = self.activation(z, self.pool_size)
 
         #a = self.activation(net.varWeights[layerNum]['w'],
@@ -195,8 +227,8 @@ class LayerNN(object):
         variable = net.x if layerNum == 0 else net.varArrayAc[layerNum - 1]
 
         #W x X + B
-        z = T.dot(net.varWeights[layerNum]['w'] * (self.dropout if self.dropout else 1.0), variable) + net.varWeights[layerNum]['b'].dimshuffle(0, 'x')
-
+        #z = T.dot(net.varWeights[layerNum]['w'] * (self.dropout if self.dropout else 1.0), variable) + net.varWeights[layerNum]['b'].dimshuffle(0, 'x')
+        z = T.matmul(net.varWeights[layerNum]['w'] * (self.dropout if self.dropout else 1.0), variable) + T.expand_dims(net.varWeights[layerNum]['b'], 1)
         a = self.activation(z, self.pool_size)
 
         #a = self.activation(net.varWeights[layerNum]['w'] * (self.dropout if self.dropout else 1.0), variable,
@@ -204,7 +236,8 @@ class LayerNN(object):
         net.varArrayAc.append(a)
 
     def compileWeightDecayPenalty(self, net, layerNum):
-        penalty = T.sum(net.varWeights[layerNum]['w'] ** 2) * self.weightDecay / 2
+        #penalty = T.sum(net.varWeights[layerNum]['w'] ** 2) * self.weightDecay / 2
+        penalty = T.reduce_sum(net.varWeights[layerNum]['w'] ** 2, reduction_indices=None, keep_dims=False, name=None) * self.weightDecay / 2
         net.regularize.append(penalty)
 
 
@@ -242,7 +275,8 @@ class LayerRNN(LayerNN):
         weights = weights / weights_max
         weights = weights * 2 * random - random
 
-        w = theano.shared(weights.astype(theano.config.floatX), name="w%s" % (layerNum + 1))
+        #w = theano.shared(weights.astype(theano.config.floatX), name="w%s" % (layerNum + 1))
+        w = T.get_variable(name="w%s" % (layerNum + 1), shape=None, dtype=T.float32, initializer=T.constant_initializer(weights))
         W['w'] = w
 
         # B
@@ -253,20 +287,19 @@ class LayerRNN(LayerNN):
         for i in xrange(self.blocks):
             B[i * 4] = np.random.randn() * random / 6.0
 
-        b = theano.shared(B.astype(theano.config.floatX),
-                          name="b%s" % (layerNum + 1))
+        #b = theano.shared(B.astype(theano.config.floatX), name="b%s" % (layerNum + 1))
+        b = T.get_variable(name="b%s" % (layerNum + 1), shape=None, dtype=T.float32, initializer=T.constant_initializer(B))
         W['b'] = b
 
         net.varWeights.append(W)
 
         # A
-        self.A = theano.shared(np.tile(0.0, (self.blocks, net.options.minibatch_size)).astype(theano.config.floatX),
-                               name='A%s' % (layerNum + 1))
+        #self.A = theano.shared(np.tile(0.0, (self.blocks, net.options.minibatch_size)).astype(theano.config.floatX), name='A%s' % (layerNum + 1))
+        self.A = T.get_variable(name='A%s' % (layerNum + 1), shape=None, dtype=T.float32, initializer=T.constant_initializer(np.tile(0.0, (self.blocks, net.options.minibatch_size))))
 
         # A for predict
-        self.A_predict = theano.shared(np.tile(0.0, (self.blocks, net.options.CV_size)).astype(theano.config.floatX),
-                                       name='A_p%s' % (layerNum + 1))
-
+        #self.A_predict = theano.shared(np.tile(0.0, (self.blocks, net.options.CV_size)).astype(theano.config.floatX), name='A_p%s' % (layerNum + 1))
+        self.A_predict = T.get_variable(name='A_p%s' % (layerNum + 1), shape=None, dtype=T.float32, initializer=T.constant_initializer(np.tile(0.0, (self.blocks, net.options.CV_size))))
         # Mask - for peeholes connection
         if self.peeholes:
             mask = np.zeros((self.blocks, self.internalOutSize))
@@ -281,16 +314,25 @@ class LayerRNN(LayerNN):
         variable = net.x if layerNum == 0 else net.varArrayA[layerNum - 1]
 
         if self.peeholes:
-            extX = T.zeros((self.size_in, net.options.minibatch_size))
-            extX = T.set_subtensor(extX[:self.size_in - self.blocks, :], variable)
-            extX = T.set_subtensor(extX[self.size_in - self.blocks:, :], self.A)
-
+            #extX = T.zeros((self.size_in, net.options.minibatch_size))
+            extX = np.zeros((self.size_in, net.options.minibatch_size))
+            #extX = T.set_subtensor(extX[:self.size_in - self.blocks, :], variable)
+            #extX.append(extX[:self.size_in - self.blocks, :] =  variable)
+            extX[:self.size_in - self.blocks, :] =  variable
+            #extX = T.set_subtensor(extX[self.size_in - self.blocks:, :], self.A)
+            #extX.append(extX[self.size_in - self.blocks:, :] = self.A)
+            extX[self.size_in - self.blocks:, :] = self.A
+            '''
             maskedW = T.set_subtensor(net.varWeights[layerNum]['w'].T[-self.blocks:, :],
                                       (net.varWeights[layerNum]['w'].T[-self.blocks:, :] * self.W_mask).astype(
                                           theano.config.floatX)).T
-
+            '''
+            #maskedW.append(net.varWeights[layerNum]['w'].T[-self.blocks:, :] = (net.varWeights[layerNum]['w'].T[-self.blocks:, :] * self.W_mask).astype(np.float32).T)
+            net.varWeights[layerNum]['w'].T[-self.blocks:, :] = (net.varWeights[layerNum]['w'].T[-self.blocks:, :] * self.W_mask).astype(np.float32).T
+            maskedW = (net.varWeights[layerNum]['w'].T[-self.blocks:, :]).T
             #W x X + B
-            z = T.dot(maskedW, extX * (net.dropOutVectors[layerNum].dimshuffle(0, 'x') if self.dropout else 1.0)) + net.varWeights[layerNum]['b'].dimshuffle(0, 'x')
+            #z = T.dot(maskedW, extX * (net.dropOutVectors[layerNum].dimshuffle(0, 'x') if self.dropout else 1.0)) + net.varWeights[layerNum]['b'].dimshuffle(0, 'x')
+            z = T.matmul(maskedW, extX * (T.expand_dims(net.dropOutVectors[layerNum], 1) if self.dropout else 1.0), reuse=None) + T.expand_dims(net.varWeights[layerNum]['b'])
 
             a = self.activation(z, self.pool_size)
 
@@ -299,7 +341,8 @@ class LayerRNN(LayerNN):
             #                    net.varWeights[layerNum]['b'])
         else:
             #W x X + B
-            z = T.dot(net.varWeights[layerNum]['w'], variable * (net.dropOutVectors[layerNum].dimshuffle(0, 'x') if self.dropout else 1.0)) + net.varWeights[layerNum]['b'].dimshuffle(0, 'x')
+            #z = T.dot(net.varWeights[layerNum]['w'], variable * (net.dropOutVectors[layerNum].dimshuffle(0, 'x') if self.dropout else 1.0)) + net.varWeights[layerNum]['b'].dimshuffle(0, 'x')
+            z = T.matmul(net.varWeights[layerNum]['w'], variable * (T.expand_dims(net.dropOutVectors[layerNum]) if self.dropout else 1.0), reuse=None) + T.expand_dims(net.varWeights[layerNum]['b'])
 
             a = self.activation(z, self.pool_size)
 
@@ -307,6 +350,7 @@ class LayerRNN(LayerNN):
             #                    variable * (net.dropOutVectors[layerNum].dimshuffle(0, 'x') if self.dropout else 1.0),
             #                    net.varWeights[layerNum]['b'])
 
+        #a = a.reshape((self.blocks, 4, net.options.minibatch_size))
         a = a.reshape((self.blocks, 4, net.options.minibatch_size))
 
         Pi = a[:, 0, :] * a[:, 1, :]
@@ -321,16 +365,27 @@ class LayerRNN(LayerNN):
         variable = net.x if layerNum == 0 else net.varArrayAc[layerNum - 1]
 
         if self.peeholes:
-            extX = T.zeros((self.size_in, net.options.CV_size))
-            extX = T.set_subtensor(extX[:self.size_in - self.blocks, :], variable)
-            extX = T.set_subtensor(extX[self.size_in - self.blocks:, :], self.A_predict)
-
+            #extX = T.zeros((self.size_in, net.options.CV_size))
+            extX = np.zeros((self.size_in, net.options.CV_size))
+            #extX = T.set_subtensor(extX[:self.size_in - self.blocks, :], variable)
+            #extX.append(extX[:self.size_in - self.blocks, :] = variable)
+            extX[:self.size_in - self.blocks, :] = variable
+            #extX = T.set_subtensor(extX[self.size_in - self.blocks:, :], self.A_predict)
+            #extX.append(extX[self.size_in - self.blocks:, :] = self.A_predict)
+            extX[self.size_in - self.blocks:, :] = self.A_predict
+            '''
             maskedW = T.set_subtensor(net.varWeights[layerNum]['w'].T[-self.blocks:, :],
                                       (net.varWeights[layerNum]['w'].T[-self.blocks:, :] * self.W_mask).astype(
                                           theano.config.floatX)).T
+            '''
 
+            #maskedW.append(net.varWeights[layerNum]['w'].T[-self.blocks:, :] =  ((net.varWeights[layerNum]['w'].T[-self.blocks:, :] * self.W_mask).astype('float32')).T)
+            net.varWeights[layerNum]['w'].T[-self.blocks:, :] = (net.varWeights[layerNum]['w'].T[-self.blocks:, :] * self.W_mask).astype(
+                np.float32)
+            maskedW = (net.varWeights[layerNum]['w'].T[-self.blocks:, :]).T
             #W x X + B
-            z = T.dot(maskedW * (self.dropout if self.dropout else 1.0), extX) + net.varWeights[layerNum]['b'].dimshuffle(0, 'x')
+            #z = T.dot(maskedW * (self.dropout if self.dropout else 1.0), extX) + net.varWeights[layerNum]['b'].dimshuffle(0, 'x')
+            z = T.matmul(maskedW * (self.dropout if self.dropout else 1.0), extX) + T.expand_dims(net.varWeights[layerNum]['b'])
 
             a = self.activation(z, self.pool_size)
 
@@ -339,7 +394,8 @@ class LayerRNN(LayerNN):
             #                    net.varWeights[layerNum]['b'])
         else:
             #W x X + B
-            z = T.dot(net.varWeights[layerNum]['w'] * (self.dropout if self.dropout else 1.0), variable) + net.varWeights[layerNum]['b'].dimshuffle(0, 'x')
+            #z = T.dot(net.varWeights[layerNum]['w'] * (self.dropout if self.dropout else 1.0), variable) + net.varWeights[layerNum]['b'].dimshuffle(0, 'x')
+            z = T.matmul(net.varWeights[layerNum]['w'] * (self.dropout if self.dropout else 1.0), variable) + T.expand_dims(net.varWeights[layerNum]['b'])
 
             a = self.activation(z, self.pool_size)
 
@@ -393,50 +449,52 @@ class LayerCNN(LayerNN):
         #weights = weights - weights_min
         #weights_max = np.max(weights)
         #weights = weights / weights_max
-
+        print weights.shape
         #w = theano.shared((weights * 2 * random - random).astype(theano.config.floatX), name="w%s" % (layerNum + 1))
-        w = theano.shared((weights * 0.01).astype(theano.config.floatX), name="w%s" % (layerNum + 1))
-
+        #w = theano.shared((weights * 0.01).astype(theano.config.floatX), name="w%s" % (layerNum + 1))
+        w = T.get_variable(name="w%s" % (layerNum + 1), shape=kernel_shape, dtype=T.float32, initializer=T.constant_initializer((weights * 0.01)), trainable=False, collections=None)
         W['w'] = w
 
         #Bias shape == number of kernels
-        b = theano.shared(np.tile(0.1, (self.kernel_shape[0],)).astype(theano.config.floatX), name="b%s" % (layerNum + 1))
-
+        #b = theano.shared(np.tile(0.1, (self.kernel_shape[0],)).astype(theano.config.floatX), name="b%s" % (layerNum + 1))
+        b = T.get_variable(name="b%s" % (layerNum + 1), shape=kernel_shape, dtype=T.float32, initializer=T.constant_initializer(np.tile(0.1, (self.kernel_shape[0],))))
         W['b'] = b
         net.varWeights.append(W)
 
     def compileDropout(self, net, R):
         #Assume we work only with square kernels
         if self.dropout:
-            net.dropOutVectors.append(R.binomial(p=self.dropout, size=(self.kernel_shape[-2], self.kernel_shape[-1]))
-                                      .astype(theano.config.floatX))
+            net.dropOutVectors.append(R.np.random.binomial(p=self.dropout, size=(self.kernel_shape[-2], self.kernel_shape[-1]))
+                                      .astype(np.float32))
         else:
             net.dropOutVectors.append(1.0)
 
     def compileSparsity(self, net, layerNum, num):
         a = net.varArrayA[layerNum]
-        out_size = T.cast(T.sqrt(T.shape(a)[0] / self.kernel_shape[0]), 'int16')
+        out_size = T.cast(T.sqrt(T.shape(a)[0] / self.kernel_shape[0]), T.int16)
         a = T.reshape(a, (net.options.minibatch_size, self.kernel_shape[0], out_size, out_size))
         #sprs = T.mean(a, axis=(1, 2, 3))
-        sprs = T.mean(a, axis=1)
+        #sprs = T.mean(a, axis=1)
+        sprs = T.reduce_mean(a, reduction_indices=1)
         epsilon = 1e-20
-        sprs = T.clip(sprs, epsilon, 1 - epsilon)
-        KL = T.sum(self.sparsity * T.log(self.sparsity / sprs) + (1 - self.sparsity) * T.log((1 - self.sparsity) / (1 - sprs))) / (out_size * out_size)
+        sprs = T.clip_by_value(sprs, epsilon, 1 - epsilon)
+        KL = T.reduce_sum(self.sparsity * T.log(self.sparsity / sprs) + (1 - self.sparsity) * T.log((1 - self.sparsity) / (1 - sprs))) / (out_size * out_size)
         net.regularize.append(self.beta * KL)
 
     def compileActivation(self, net, layerNum):
         variable = net.x if layerNum == 0 else net.varArrayA[layerNum - 1]
 
         #Calc shapes for reshape function on-the-fly. Assume we have square images as input.
-        sX = T.cast(T.sqrt(T.shape(variable)[0] / self.kernel_shape[1]), 'int16')
+        sX = T.cast(T.sqrt(T.shape(variable)[0] / self.kernel_shape[1]), T.int16)
 
         #Converts input from 2 to 4 dimensions
         Xr = T.reshape(variable.T, (T.shape(variable)[1], self.kernel_shape[1], sX, sX))
 
         if self.optimized:
+            '''
             out_size = T.cast(
                 T.ceil((T.shape(Xr)[-1] - T.shape(net.varWeights[layerNum]['w'])[-1] + 1) / np.float32(self.stride)),
-                'int32')
+                T.int32)
 
             conv_op = FilterActs(stride=self.stride)
             input_shuffled = Xr.dimshuffle(1, 2, 3, 0)  # bc01 to c01b
@@ -449,14 +507,28 @@ class LayerCNN(LayerNN):
             a = a[:, :out_size, :out_size, :]
             #Add bias
             a = a + net.varWeights[layerNum]['b'].dimshuffle(0, 'x', 'x', 'x')
+            '''
+            #TensorFlow GPU - ON
+            T.nn.conv2d(Xr, net.varWeights[layerNum]['w'] *
+                              (T.reshape(net.dropOutVectors[layerNum],(1, 1, net.dropOutVectors[layerNum].shape[0], net.dropOutVectors[layerNum].shape[1])) if self.dropout else 1.0), strides=(self.stride, self.stride), padding='VALID', use_cudnn_on_gpu=True, Name=None)
+
         else:
+            '''
             a = T.nnet.conv2d(Xr, net.varWeights[layerNum]['w'] *
                               (net.dropOutVectors[layerNum].dimshuffle('x', 'x', 0, 1) if self.dropout else 1.0),
                               border_mode='valid',
                               subsample=(self.stride, self.stride))
-            #Add bias
-            a = a + net.varWeights[layerNum]['b'].dimshuffle('x', 0, 'x', 'x')
+            '''
+            #TensorFlow GPU - OFF
+            T.nn.conv2d(Xr, net.varWeights[layerNum]['w'] *
+                              (T.reshape(net.dropOutVectors[layerNum],(1, 1, net.dropOutVectors[layerNum].shape[0], net.dropOutVectors[layerNum].shape[1])) if self.dropout else 1.0), strides=(self.stride, self.stride), padding='VALID', use_cudnn_on_gpu=False, Name=None)
 
+            #Add bias
+            #a = a + net.varWeights[layerNum]['b'].dimshuffle('x', 0, 'x', 'x')
+            #TensorFlow bias
+            a = a + T.reshape(net.varWeights[layerNum]['b'], (1, net.varWeights[layerNum]['b'].shape[0], 1, 1))
+            #Porting in Progress
+            #pool yet to be solved and also the dimshuffle
         if self.pooling:
             if self.optimized:
                 #Pooling
@@ -470,12 +542,14 @@ class LayerCNN(LayerNN):
                 a = pool_op(contiguous_input)
                 a = a.dimshuffle(3, 0, 1, 2)       # c01b to bc01
             else:
-                a = downsample.max_pool_2d(a, (self.pooling_shape, self.pooling_shape), ignore_border=False)
+                #a = downsample.max_pool_2d(a, (self.pooling_shape, self.pooling_shape), ignore_border=False)
+                a = T.nn.max_pool(a, ksize=self.pooling_shape, strides=self.pooling_shape)
         else:
             if self.optimized:
                 a = a.dimshuffle(3, 0, 1, 2)       # c01b to bc01
 
-        a = T.flatten(a, outdim=2).T
+        #a = T.flatten(a, outdim=2).T
+        a = T.reshape(a, [-2])
 
         #Sigmoid
         a = self.activation(a, self.pool_size)
@@ -486,12 +560,13 @@ class LayerCNN(LayerNN):
         variable = net.x if layerNum == 0 else net.varArrayAc[layerNum - 1]
 
         #Calc shapes for reshape function on-the-fly. Assume we have square images as input.
-        sX = T.cast(T.sqrt(T.shape(variable)[0] / self.kernel_shape[1]), 'int32')
+        sX = T.cast(T.sqrt(T.shape(variable)[0] / self.kernel_shape[1]), T.int32)
 
         #Converts input from 2 to 4 dimensions
         Xr = T.reshape(variable.T, (T.shape(variable)[1], self.kernel_shape[1], sX, sX))
 
         if self.optimized:
+            '''
             out_size = T.cast(
                 T.ceil((T.shape(Xr)[-1] - T.shape(net.varWeights[layerNum]['w'])[-1] + 1) / np.float32(self.stride)),
                 'int32')
@@ -504,16 +579,30 @@ class LayerCNN(LayerNN):
             contiguous_filters = gpu_contiguous(filters_flipped * (self.dropout if self.dropout else 1.0))
             a = conv_op(contiguous_input, contiguous_filters)
             a = a[:, :out_size, :out_size, :]
+            '''
+            #TensorFlow GPU ON
+            T.nn.conv2d(Xr, net.varWeights[layerNum]['w'] *
+                              (T.reshape(net.dropOutVectors[layerNum], (1, 1, net.dropOutVectors[layerNum].shape[0], net.dropOutVectors[layerNum].shape[1])) if self.dropout else 1.0), strides=(self.stride, self.stride), padding='VALID', use_cudnn_on_gpu=True, Name=None)
+
             #Add bias
-            a = a + net.varWeights[layerNum]['b'].dimshuffle(0, 'x', 'x', 'x')
+            #a = a + net.varWeights[layerNum]['b'].dimshuffle(0, 'x', 'x', 'x')
+            #tensorflow Bias
+            a = a + T.reshape(net.varWeights[layerNum]['b'], (net.varWeights[layerNum]['b'].shape[0], 1, 1, 1))
         else:
+            '''
             a = T.nnet.conv2d(Xr, net.varWeights[layerNum]['w'] *
                               (net.dropOutVectors[layerNum].dimshuffle('x', 'x', 0, 1) if self.dropout else 1.0),
                               border_mode='valid',
                               subsample=(self.stride, self.stride))
+            '''
+            T.nn.conv2d(Xr, net.varWeights[layerNum]['w'] *
+                          (T.reshape(net.dropOutVectors[layerNum], (1, 1, net.dropOutVectors[layerNum].shape[0], net.dropOutVectors[layerNum].shape[1])) if self.dropout else 1.0), strides=(self.stride, self.stride), padding='VALID', use_cudnn_on_gpu=False, Name=None)
 
             #Add bias
-            a = a + net.varWeights[layerNum]['b'].dimshuffle('x', 0, 'x', 'x')
+            a = a + T.reshape(net.varWeights[layerNum]['b'], (1, net.varWeights[layerNum]['b'].shape[0], 1, 1))
+            #a = a + net.varWeights[layerNum]['b'].dimshuffle('x', 0, 'x', 'x')
+            #tensorflow Bias
+
 
         if self.pooling:
             if self.optimized:
@@ -522,7 +611,8 @@ class LayerCNN(LayerNN):
                 # stride - Defines the stride size between successive pooling squares.
                 # Setting this parameter smaller than sizeX produces overlapping pools.
                 # Setting it equal to sizeX gives the usual, non-overlapping pools. Values greater than sizeX are not allowed.
-                pool_op = MaxPool(ds=self.pooling_shape, stride=self.pooling_shape)
+                #pool_op = MaxPool(ds=self.pooling_shape, stride=self.pooling_shape)
+                pool_op = T.nn.max_pool(value=self.pooling_shape, strides=self.pooling_shape)
                 contiguous_input = gpu_contiguous(a.astype(theano.config.floatX))
                 a = pool_op(contiguous_input)
                 a = a.dimshuffle(3, 0, 1, 2)       # c01b to bc01
@@ -532,7 +622,8 @@ class LayerCNN(LayerNN):
             if self.optimized:
                 a = a.dimshuffle(3, 0, 1, 2)       # c01b to bc01
 
-        a = T.flatten(a, outdim=2).T
+        #a = T.flatten(a, outdim=2).T
+        a = T.reshape(a, [-2]).T
 
         #Sigmoid
         a = self.activation(a, self.pool_size)
@@ -579,8 +670,10 @@ class TheanoNNclass(object):
         self.varWeights = []
 
         # Variables
-        self.x = T.matrix("x")
-        self.y = T.matrix("y")
+        #self.x = T.matrix("x")
+        self.x = T.placeholder(dtype=T.float32, name="x")
+        #self.y = T.matrix("y")
+        self.y = T.placeholder(dtype=T.float32, name="x")
 
         # Weights
         for i in xrange(self.lastArrayNum):
@@ -630,7 +723,8 @@ class TheanoNNclass(object):
         self.unroll()
 
         # Predict variables
-        self.data = T.matrix("data")
+        #self.data = T.matrix("data")
+        self.data = T.placeholder(dtype=T.float32, name="data")
         self.varArrayAc = []
 
         # List of output variables
@@ -655,7 +749,8 @@ class TheanoNNclass(object):
                 l.compileWeightDecayPenalty(self, i)
 
         # Error
-        XENT = 1.0 / self.options.minibatch_size * T.sum((self.y - self.varArrayA[-1]) ** 2 * 0.5)
+        #XENT = 1.0 / self.options.minibatch_size * T.sum((self.y - self.varArrayA[-1]) ** 2 * 0.5)
+        XENT = 1.0 / self.options.minibatch_size * T.reduce_sum((self.y - self.varArrayA[-1]) ** 2 * 0.5)
         self.cost = XENT
         for err in self.regularize:
             self.cost += err
@@ -671,17 +766,21 @@ class TheanoNNclass(object):
         for i in xrange(self.lastArrayNum):
             for k in self.varWeights[i].keys():
                 gradArray.append(self.varWeights[i][k])
-        self.derivativesArray = T.grad(self.cost, gradArray)
+        #self.derivativesArray = T.grad(self.cost, gradArray)
+        self.derivativesArray = T.gradients(self.cost, gradArray)
+        #the above will have TENSORFLOW gradient computation function
 
         # RMS
         if self.options.rmsProp:
             for i in xrange(len(self.derivativesArray)):
-                mmsp = theano.shared(np.tile(0.0, gradArray[i].get_value().shape).astype(theano.config.floatX),
-                                     name="mmsp%s" % (i + 1))  # 0.0 - 1.0 maybe
+                #mmsp = theano.shared(np.tile(0.0, gradArray[i].get_value().shape).astype(theano.config.floatX),
+                                     #name="mmsp%s" % (i + 1))  # 0.0 - 1.0 maybe
+                mmsp = T.get_variable(name="mmsp%s" % (i + 1), shape=None, dtype=T.float32, initializer=T.constant_initializer(np.tile(0.0, gradArray[i].get_value().shape)))
                 self.MMSprev.append(mmsp)
                 mmsn = self.options.rmsProp * mmsp + (1 - self.options.rmsProp) * self.derivativesArray[i] ** 2
                 #mmsn = T.clip(mmsn, self.options.mmsmin, 1e+15)  # Fix nan if rmsProp
-                mmsn = T.clip(mmsn, self.options.mmsmin, np.finfo(np.float32).max)  # Fix nan if rmsProp
+                #mmsn = T.clip(mmsn, self.options.mmsmin, np.finfo(np.float32).max)  # Fix nan if rmsProp
+                mmsn = T.clip_by_value(mmsn, self.options.mmsmin, np.finfo(np.float32).max)
                 self.MMSnew.append(mmsn)
 
         # Update values
@@ -718,7 +817,8 @@ class TheanoNNclass(object):
                 l.compileWeightDecayPenalty(self, i)
 
         # Error
-        XENT = 1.0 / self.options.minibatch_size * T.sum((self.y - self.varArrayA[-1]) ** 2 * 0.5)
+        #XENT = 1.0 / self.options.minibatch_size * T.sum((self.y - self.varArrayA[-1]) ** 2 * 0.5)
+        XENT = 1.0 / self.options.minibatch_size * T.reduce_sum((self.y - self.varArrayA[-1]) ** 2 * 0.5)
         self.cost = XENT
         for err in self.regularize:
             self.cost += err
@@ -729,7 +829,9 @@ class TheanoNNclass(object):
         for i in xrange(self.lastArrayNum):
             for k in self.varWeights[i].keys():
                 gradArray.append(self.varWeights[i][k])
-        self.derivativesArray = T.grad(self.cost, gradArray)
+        #self.derivativesArray = T.grad(self.cost, gradArray)
+        self.derivativesArray = T.gradients(self.cost, gradArray)
+
 
         # Update output array
         self.outputArray.append(self.cost)

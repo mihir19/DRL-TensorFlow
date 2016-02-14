@@ -5,8 +5,9 @@ import numpy as np
 from numpy import *
 from numpy import dot, sqrt, diag
 from numpy.linalg import eigh
-import theano
-import theano.tensor as T
+#import theano
+#import theano.tensor as T
+import tensorflow as T
 import csv as csv
 import cPickle
 import time
