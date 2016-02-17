@@ -176,13 +176,13 @@ class LayerNN(object):
         #w = theano.shared((weights * 2 * random - random).astype(theano.config.floatX), name="w%s" % (layerNum + 1))
         #w = theano.shared((weights * 0.01).astype(theano.config.floatX), name="w%s" % (layerNum + 1))
         # if dtype doesn't work try using astype in initializer
-        w = T.get_variable(name="w%s" % (layerNum + 1), shape=None, dtype=T.float32, initializer=T.constant_initializer((weights * 0.01)))
+        w = T.get_variable(name="w%s" % (layerNum + 1), shape=weights.shape, dtype=T.float32, initializer=T.constant_initializer((weights * 0.01)))
 
         W['w'] = w
 
         if self.activation != FunctionModel.MaxOut:
             #b = theano.shared(np.tile(0.1, (self.size_out,)).astype(theano.config.floatX), name="b%s" % (layerNum + 1))
-            b = T.get_variable(name="b%s" % (layerNum + 1), shape=None, dtype=T.float32, initializer=T.constant_initializer(np.tile(0.1, (self.size_out,))))
+            b = T.get_variable(name="b%s" % (layerNum + 1), shape=self.size_out, dtype=T.float32, initializer=T.constant_initializer(np.tile(0.1, (self.size_out,))))
         else:
             #b = theano.shared(np.tile(0.1, (self.size_out * self.pool_size,)).astype(theano.config.floatX), name="b%s" % (layerNum + 1))
             b = T.get_variable(name="b%s" % (layerNum + 1), shape=None, dtype=T.float32, initializer=T.constant_initializer(np.tile(0.1, (self.size_out * self.pool_size,))))
@@ -452,12 +452,12 @@ class LayerCNN(LayerNN):
         print weights.shape
         #w = theano.shared((weights * 2 * random - random).astype(theano.config.floatX), name="w%s" % (layerNum + 1))
         #w = theano.shared((weights * 0.01).astype(theano.config.floatX), name="w%s" % (layerNum + 1))
-        w = T.get_variable(name="w%s" % (layerNum + 1), shape=kernel_shape, dtype=T.float32, initializer=T.constant_initializer((weights * 0.01)), trainable=False, collections=None)
+        w = T.get_variable(name="w%s" % (layerNum + 1), shape=self.kernel_shape, dtype=T.float32, initializer=T.constant_initializer((weights * 0.01)))
         W['w'] = w
 
         #Bias shape == number of kernels
         #b = theano.shared(np.tile(0.1, (self.kernel_shape[0],)).astype(theano.config.floatX), name="b%s" % (layerNum + 1))
-        b = T.get_variable(name="b%s" % (layerNum + 1), shape=kernel_shape, dtype=T.float32, initializer=T.constant_initializer(np.tile(0.1, (self.kernel_shape[0],))))
+        b = T.get_variable(name="b%s" % (layerNum + 1), shape=self.kernel_shape, dtype=T.float32, initializer=T.constant_initializer(np.tile(0.1, (self.kernel_shape[0],))))
         W['b'] = b
         net.varWeights.append(W)
 
@@ -681,7 +681,8 @@ class TheanoNNclass(object):
 
         # Dropout
         self.dropOutVectors = []
-        srng = RandomStreams()  # Theano random generator for dropout
+        #srng = RandomStreams()  # Theano random generator for dropout
+        srng = np.random.RandomState()
         for i in xrange(self.lastArrayNum):
             self.architecture[i].compileDropout(self, srng)
 
