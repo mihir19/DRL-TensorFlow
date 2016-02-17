@@ -452,7 +452,7 @@ class LayerCNN(LayerNN):
         print weights.shape
         #w = theano.shared((weights * 2 * random - random).astype(theano.config.floatX), name="w%s" % (layerNum + 1))
         #w = theano.shared((weights * 0.01).astype(theano.config.floatX), name="w%s" % (layerNum + 1))
-        w = T.get_variable(name="w%s" % (layerNum + 1), shape=self.kernel_shape, dtype=T.float32, initializer=T.constant_initializer((weights * 0.01)))
+        w = T.get_variable(name="w%s" % (layerNum + 1), shape=weights.shape, dtype=T.float32, initializer=T.constant_initializer((weights * 0.01)))
         W['w'] = w
 
         #Bias shape == number of kernels
@@ -907,10 +907,14 @@ class TheanoNNclass(object):
 
     def paramGetter(self):  # Returns the values of model parameters such as [w1, b1, w2, b2] ect.
         model = []
+        modell = T.initialize_all_variables()
         for i in xrange(self.lastArrayNum):  # Possible use len(self.varArrayB) or len(self.varArrayW) instead
             D = dict()
             for k in self.varWeights[i].keys():
-                D[k] = self.varWeights[i][k].get_value()
+                with T.Session() as session:
+                    session.run(modell)
+                    D[k] = session.run(self.varWeights[i][k]) 
+                #D[k] = self.varWeights[i][k].get_value()
             model.append(D)
         return model
 
