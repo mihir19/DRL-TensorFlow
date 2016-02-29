@@ -5,7 +5,7 @@ import os
 import numpy as np
 from time import sleep
 from data.preprocessing import preprocessing
-from TNNF import fTheanoNNclassCORE, fGraphBuilderCORE
+from TNNF import TensorFlowNNclassCORE, fGraphBuilderCORE
 #-----------------------------------------------#
 
 class ale:
@@ -53,12 +53,12 @@ class ale:
         self.screen_image, step_information = self.f_in.readline()[:-2].split(":")
         self.game_over = bool(int(step_information.split(",")[0]))
         self.reward_from_emulator = int(step_information.split(",")[1])
-    
+
     def __first_fire_(self):
         self.f_out.write("1,18\n")   # 1,40 if not work ; (page 9 of ALE manual)
         self.f_out.flush()
         self.f_in.readline()
-        
+
     def start_game(self):
         self.__get_param__()
         print type(self.screen_image), len(self.screen_image)
@@ -67,13 +67,13 @@ class ale:
         self.__first_fire_()
         self.play_games += 1
         print "Start"
-        
+
     def finish_game(self):
         self.f_out.write("45,45\n")
         self.f_out.flush()
         self.memory.insert_last()
         print "End\n"
-        
+
     def move(self, index_of_action):
         action = self.actions_list[index_of_action]
         self.f_out.write(str(action)+",18\n")   # ,40 if not work ; (page 9 of ALE manual)
@@ -91,7 +91,7 @@ class ale:
         if self.rewards_count >= 1000:
             self.rewards_count = 0
             self.rewards_accum.append(self.rewards_moment)
-            self.p_g_a.append(self.rewards_moment / (self.play_games + 1.0 * (self.play_games == 0)))            
+            self.p_g_a.append(self.rewards_moment / (self.play_games + 1.0 * (self.play_games == 0)))
             self.rewards_moment = 0
             self.play_games = 0
             # UNCOMMENT IF YOU NEED GRAPHS

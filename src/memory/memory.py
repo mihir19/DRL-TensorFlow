@@ -15,11 +15,11 @@ class memory:
         self.game_step_phase = 4   # Wait for collect 4 images
         self.size = size   # Size of memory
         self.D = collections.deque(maxlen=self.size)   # Transitions memory TODO Numpy instead collection
-        
+
     def __stat__(self, mute=False):
         if not mute:
             print "S:", len(self.screenshots), "A:", len(self.actions), "R:", len(self.rewards), "D:", len(self.D)
-            
+
     def __get_state__(self, number):
         state = self.screenshots[number - 3 : number + 1]
         side = state[0].shape[0]
@@ -35,7 +35,7 @@ class memory:
         # Saving batch
         #np.save('./models/AS.state', new_state)
         return new_state
- 
+
     def insert_first(self, new_screenshot):
         self.screenshots.append(new_screenshot)
         self.__stat__()
@@ -60,18 +60,18 @@ class memory:
         self.screenshots = []
         self.actions = []
         self.rewards = []
-          
+
     def get_minibatch(self, size):
         index = np.random.randint(0, len(self.D), size)
         transitions = [self.D[x] for x in index]   # TODO Make this with matrix way
         return transitions
-        
+
     def get_actual_state(self):
         return self.__get_state__(len(self.screenshots) - 1)
-        
+
     def mem_save(self, index):
         f = file('./models/AS.memory.D.' + str(index), 'wb')
         cPickle.dump(self.D, f, protocol=cPickle.HIGHEST_PROTOCOL)
         f.close()
-                
+
 #-----------------------------------------------#

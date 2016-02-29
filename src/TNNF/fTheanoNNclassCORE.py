@@ -484,11 +484,16 @@ class LayerCNN(LayerNN):
     def compileActivation(self, net, layerNum):
         variable = net.x if layerNum == 0 else net.varArrayA[layerNum - 1]
 
+        var = T.to_int64(variable)
         #Calc shapes for reshape function on-the-fly. Assume we have square images as input.
-        sX = T.cast(T.sqrt(T.shape(variable)[0] / self.kernel_shape[1]), T.int16)
+        c1 = T.sqrt(T.shape(var)[0] / self.kernel_shape[1])
+        sX = T.cast(c1, T.int16)
 
+        #var = T.cast(variable, T.int64)
+
+        print T.shape(var)[1], self.kernel_shape[1], sX, sX
         #Converts input from 2 to 4 dimensions
-        Xr = T.reshape(variable.T, (T.shape(variable)[1], self.kernel_shape[1], sX, sX))
+        Xr = T.reshape(var, (T.shape(var)[1], self.kernel_shape[1], sX, sX))
 
         if self.optimized:
             '''
@@ -560,7 +565,8 @@ class LayerCNN(LayerNN):
         variable = net.x if layerNum == 0 else net.varArrayAc[layerNum - 1]
 
         #Calc shapes for reshape function on-the-fly. Assume we have square images as input.
-        sX = T.cast(T.sqrt(T.shape(variable)[0] / self.kernel_shape[1]), T.int32)
+        sX = T.to_int32(T.sqrt(T.shape(variable)[0] / self.kernel_shape[1]))
+
 
         #Converts input from 2 to 4 dimensions
         Xr = T.reshape(variable.T, (T.shape(variable)[1], self.kernel_shape[1], sX, sX))
@@ -673,8 +679,12 @@ class TheanoNNclass(object):
         #self.x = T.matrix("x")
         self.x = T.placeholder(dtype=T.float32, name="x")
         #self.y = T.matrix("y")
-        self.y = T.placeholder(dtype=T.float32, name="x")
-
+        self.y = T.placeholder(dtype=T.float32, name="y")
+        '''
+        with T.Session() as session:
+            r1 = session.run(self.x)
+            r2 = session.run(self.y)
+            print(r1,r2)'''
         # Weights
         for i in xrange(self.lastArrayNum):
             self.architecture[i].compileWeight(self, i)
@@ -913,7 +923,7 @@ class TheanoNNclass(object):
             for k in self.varWeights[i].keys():
                 with T.Session() as session:
                     session.run(modell)
-                    D[k] = session.run(self.varWeights[i][k]) 
+                    D[k] = session.run(self.varWeights[i][k])
                 #D[k] = self.varWeights[i][k].get_value()
             model.append(D)
         return model

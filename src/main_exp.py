@@ -28,10 +28,10 @@ class main:
         #f = file('./models/!AS.memory.D.933134', 'rb')
         #self.memory.D = cPickle.load(f)
         #f.close()
-        
+
     def __compute_epsilon__(self):
         return max((0.9 - 0.9 / self.epsilon_step_dec * self.steps), 0.1)
-                        
+
     def run_game(self):
         # Maximum number of episodes
         while self.M < 50000000:
@@ -64,13 +64,13 @@ class main:
             if self.count >= 20000:
                 self.count = 0
                 self.n_net.saveModel('./models/AS.model.weights.NN.NMem.' + str(self.steps))
-                self.memory.mem_save(self.steps)            
+                self.memory.mem_save(self.steps)
             # Sum of weights of hidden layers for debug
             self.n_net.printedW()
             self.T = 0
             self.M += 1
             print "Episode:", self.M
-            
+
 if __name__ == '__main__':
     T = main()
     T.run_game()

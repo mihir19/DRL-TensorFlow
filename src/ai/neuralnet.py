@@ -1,25 +1,28 @@
 #-----------------------------------------------#
 # Neural Network realisation class based on TNNF.
 #-----------------------------------------------#
+import sys
 import numpy as np
-from TNNF import fTheanoNNclassCORE, fGraphBuilderCORE
+from memory.memory import memory
+from TNNF import TensorFlowNNclassCORE, fGraphBuilderCORE
 #-----------------------------------------------#
 
 class neuralnet:
     def __init__(self, bSize):
         self.waccum = []   # TODO Collection?
         learnStep = 0.00001
+        self.size = 100000
         batchSize = bSize
         CV_size = 1
-        
-        OPTIONS = fTheanoNNclassCORE.OptionsStore(learnStep=learnStep,
+
+        OPTIONS = TensorFlowNNclassCORE.OptionsStore(learnStep=learnStep,
                                                   rmsProp=0.9,
                                                   minibatch_size=batchSize,
                                                   CV_size=CV_size)
 
-        L1 = fTheanoNNclassCORE.LayerCNN(size_in=28224,
+        L1 = TensorFlowNNclassCORE.LayerCNN(size_in=28224,
                                          size_out=6400,
-                                         activation=fTheanoNNclassCORE.FunctionModel.ReLU,   # LReLU for non gs
+                                         activation=TensorFlowNNclassCORE.FunctionModel.ReLU,   # LReLU for non gs
                                          weightDecay=1e-6,
                                          sparsity=False,
                                          beta=2,
@@ -30,9 +33,9 @@ class neuralnet:
                                          pooling_shape=2,
                                          optimized=True)
 
-        L2 = fTheanoNNclassCORE.LayerCNN(size_in=6400,
+        L2 = TensorFlowNNclassCORE.LayerCNN(size_in=6400,
                                          size_out=2592,
-                                         activation=fTheanoNNclassCORE.FunctionModel.ReLU,   # LReLU for non gs
+                                         activation=TensorFlowNNclassCORE.FunctionModel.ReLU,   # LReLU for non gs
                                          weightDecay=1e-6,
                                          sparsity=False,
                                          beta=2,
@@ -43,21 +46,20 @@ class neuralnet:
                                          pooling_shape=2,
                                          optimized=True)
 
-        L3 = fTheanoNNclassCORE.LayerNN(size_in=2592,
+        L3 = TensorFlowNNclassCORE.LayerNN(size_in=2592,
                                         size_out=256,
                                         #weightDecay=1e-6,
                                         #dropout=0.85,
-                                        activation=fTheanoNNclassCORE.FunctionModel.ReLU)
+                                        activation=TensorFlowNNclassCORE.FunctionModel.ReLU)
 
-        L4 = fTheanoNNclassCORE.LayerNN(size_in=256,
+        L4 = TensorFlowNNclassCORE.LayerNN(size_in=256,
                                         size_out=4,
                                         #dropout=0.85,
-                                        activation=fTheanoNNclassCORE.FunctionModel.Linear)
-
-        NN = fTheanoNNclassCORE.TheanoNNclass(OPTIONS, (L1, L2, L3, L4))
+                                        activation=TensorFlowNNclassCORE.FunctionModel.Linear)
+        NN = TensorFlowNNclassCORE.TensorFlowNNclass(OPTIONS, (L1, L2, L3, L4))
         NN.trainCompile()
         NN.predictCompile()
-        
+
         self.network = NN
         self.gamma = 0.97   # 0.99 or 0.9
         self.train_nn_model = NN.trainCalc
@@ -79,7 +81,7 @@ class neuralnet:
         batch_poststate = np.array(batch_poststate).T
         batch_actions = np.array(batch_actions)
         batch_reward = np.array(batch_reward)
-
+        
         # Debug. Saving batch.
         #np.save('./models/AS.batch.4.84.84', batch_prestate)
         #print batch_prestate
@@ -100,11 +102,11 @@ class neuralnet:
 
     def loadModel(self, name):
         self.network.modelLoader(name)
-        
+
     def printedW(self):
         w0 = self.network.paramGetter()[0]['w']
         w1 = self.network.paramGetter()[1]['w']
-        print w0.shape, w1.shape 
+        print w0.shape, w1.shape
         #print w[0, 0, :3, :3]
         w = np.sum(w0) + np.sum(w1)
         print "Weight sum ", w
@@ -113,5 +115,5 @@ class neuralnet:
         #fTheanoNNclassCORE.NNsupport.errorG(self.waccum, "./graphs/wsum.png")
         if len(self.waccum) > 25:
             self.waccum = []
-                
+
 #-----------------------------------------------#
