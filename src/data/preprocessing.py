@@ -2,7 +2,7 @@
 # Data preprocessing class.
 #-----------------------------------------------#
 from binascii import unhexlify
-import scipy
+import scipy.misc
 from PIL import Image
 import numpy as np
 #-----------------------------------------------#
@@ -34,5 +34,5 @@ class preprocessing:
             self.counter += 1
 
         return pixels
-        
+
 #-----------------------------------------------#

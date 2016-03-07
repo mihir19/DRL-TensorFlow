@@ -9,7 +9,7 @@ from TNNF import TensorFlowNNclassCORE, fGraphBuilderCORE
 #-----------------------------------------------#
 
 class ale:
-    def __init__(self, memory, display_screen="true", frames_to_skip=4, ale_game_ROM='../emulators/ale_0_4/roms/breakout.bin'):
+    def __init__(self, memory, display_screen="false", frames_to_skip=4, ale_game_ROM='../emulators/ale_0_4/roms/breakout.bin'):
         # List of possible actions for agent
         self.actions_list = [np.uint8(0), np.uint8(1), np.uint8(3), np.uint8(4)]   # np.uint8(2), np.uint8(5) instead 3 and 4 for Boxing ROM
         # Read and write commands and response from emulator

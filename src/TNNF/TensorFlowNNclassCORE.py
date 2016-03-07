@@ -7,6 +7,7 @@ import cPickle
 import time  # import datetime
 from fImageWorkerCORE import *
 import tensorflow as tf
+import sys
 
 #---------------------------------------------------------------------#
 # Graph Function TensorFlow
@@ -112,6 +113,16 @@ class LayerNN(object):
         random = sqrt(6) / sqrt(net.architecture[0].size_in + net.architecture[-1].size_out)
         W = dict()
 
+        #if self.activation != FunctionModel.MaxOut:
+        #    weights = np.random.randn(self.size_out, self.size_in)
+        #else:
+        #    weights = np.random.randn(self.size_out * self.pool_size, self.size_in)
+
+        #print("Weights")
+        #print(weights)
+        #w = tf.get_variable(name="w%s" % (layerNum + 1), shape=weights.shape, dtype=tf.float32, initializer=tf.constant_initializer((weights * 0.01)))
+
+
         if self.activation != FunctionModel.MaxOut:
             w = tf.Variable(tf.random_normal([self.size_out, self.size_in], stddev=0.01), name="w%s" % (layerNum + 1))
         else:
@@ -123,6 +134,13 @@ class LayerNN(object):
         else:
             b = tf.Variable(np.tile(0.1, (self.size_out * self.pool_size,)).astype("float32"), name="b%s" % (layerNum + 1))
         W['b'] = b
+
+        #print "NN-Compile Weight"
+        #model = tf.initialize_all_variables()
+        #with tf.Session() as session:
+        #    session.run(model)
+        #    print(session.run(W['w']))
+
         net.varWeights.append(W)
 
     def compileDropout(self, net):
@@ -135,14 +153,23 @@ class LayerNN(object):
 
     def compileActivation(self, net, layerNum):
         variable = net.x if layerNum == 0 else net.varArrayA[layerNum - 1]
-        #z = tf.matmul((net.varWeights[layerNum]['w']), (variable * (tf.expand_dims(net.dropOutVectors[layerNum], 1) if self.dropout else 1.0))) + tf.expand_dims(net.varWeights[layerNum]['b'], 1)
+        #print tf.expand_dims(net.dropOutVectors[layerNum], 1)
+
+        #print net.varWeights[layerNum]['w'].get_shape().as_list()
+        print "LayerCNN - Compile Activation Start"
+        print(layerNum)
+
+        #variable = tf.placeholder("int")
+        print "LayerCNN - Compile Activation End"
+        #z = tf.reduce_prod((net.varWeights[layerNum]['w'])) + tf.reshape(net.varWeights[layerNum]['b'], [net.varWeights[layerNum]['w'].get_shape().as_list()[0],1])
         z = 128
         a = self.activation(z, self.pool_size)
         net.varArrayA.append(a)
 
     def compilePredictActivation(self, net, layerNum):
         variable = net.x if layerNum == 0 else net.varArrayA[layerNum - 1]
-        z = T.matmul(net.varWeights[layerNum]['w'] * (self.dropout if self.dropout else 1.0), variable) + T.expand_dims(net.varWeights[layerNum]['b'], 1)
+        #z = tf.matmul(net.varWeights[layerNum]['w'] * (self.dropout if self.dropout else 1.0), tf.reshape(variable, [1, net.varWeights[layerNum]['w'].get_shape().as_list()[0]*2])) + tf.expand_dims(net.varWeights[layerNum]['b'], 1)
+        z = 128
         a = self.activation(z, self.pool_size)
         net.varArrayA.append(a)
 
@@ -184,6 +211,11 @@ class LayerCNN(LayerNN):
         #bias shape == number of kernels
         b = tf.Variable(np.tile(0.1, (self.kernel_shape[0],)).astype("float32"), name="b%s" % (layerNum + 1))
         W['b'] = b
+        #print "CNN-Compile Weight"
+        #model = tf.initialize_all_variables()
+        #with tf.Session() as session:
+        #    session.run(model)
+        #    print(session.run(W['w']))
         net.varWeights.append(W)
 
     def compileDropout(self, net):
@@ -196,6 +228,14 @@ class LayerCNN(LayerNN):
 
     def compileActivation(self, net, layerNum):
         variable = net.x if layerNum == 0 else net.varArrayA[layerNum - 1]
+
+        print "LayerCNN - Compile Activation Start"
+        print(layerNum)
+        if layerNum != 0:
+            print(net.varArrayA[layerNum - 1])
+        print(variable.get_shape())
+        print(tf.shape(variable)[0])
+        print "LayerCNN - Compile Activation End"
         '''
         sh = tf.shape(variable)
         sess = tf.Session()
@@ -236,8 +276,12 @@ class LayerCNN(LayerNN):
         print a
         #Max pooling in tensorflow requires float32 input if required cast a to float32
         if self.pooling:
-            a = tf.nn.max_pool(a, self.pooling_shape, self.pooling_shape, padding='VALID')
-
+            a =  tf.transpose(a, (0, 2, 3, 1))
+            a = tf.nn.max_pool(a, ksize=[1, self.pooling_shape, self.pooling_shape, 1], strides=[1,self.pooling_shape,self.pooling_shape ,1], padding='VALID')
+            print "POOL"
+        else:
+            if self.optimized:
+                a =  tf.transpose(a, (0, 2, 3, 1))
         a = tf.reshape(a, [-2])
         a = tf.transpose(a)
 
@@ -264,25 +308,37 @@ class LayerCNN(LayerNN):
 
         #Converts input from 2 to 4 dimensions
         variable = tf.transpose(variable)
-        Xr = tf.reshape(variable, (tf.shape(variable)[1], self.kernel_shape[1], sX, sX))
 
-        #filterr =
+        #sess = tf.Session()
+        #print sess.run(sh, feed_dict={net.x: [12.4, 14.54, 88.43, 13.5]})
 
-        #filterr = tf.transpose(filterr, (2, 3, 1, 0))
 
-        #if self.optimized:
-            #conv2d of tensorflow GPU ON
-        #else:
-            #conv2d of Tensorflow with GPU OFF
+        #print(variable, tf.shape(variable)[1], self.kernel_shape[1], sX, sX.eval())
+        Xr = tf.cast(tf.reshape(variable, tf.pack([tf.shape(variable)[0], self.kernel_shape[1], sX, sX])), tf.float32)
+        Xr = tf.transpose(Xr, (0, 2, 3, 1))
 
-        #Add bias
+
+        filterr = net.varWeights[layerNum]['w'] * (tf.reshape(net.dropOutVectors[layerNum],(1, 1, net.dropOutVectors[layerNum].shape[0], net.dropOutVectors[layerNum].shape[1])) if self.dropout else 1.0)
+
+
+        filterr = tf.transpose(filterr, (2, 3, 1, 0))
+        if self.optimized:
+            a = tf.nn.conv2d(Xr, filter=filterr, strides=[1, self.stride,self.stride,1], padding='VALID')
+        else:
+            a = tf.nn.conv2d(Xr, filter=filterr, strides=[1, self.stride,self.stride,1], padding='VALID', use_cudnn_on_gpu=False)
+
+        a = a + tf.reshape(net.varWeights[layerNum]['b'], (1, net.varWeights[layerNum]['b'].get_shape().as_list()[0], 1, 1))
 
         if self.pooling:
-            a = tf.nn.max_pool(a, self.pooling_shape, self.pooling_shape, padding='VALID')
-
+            a =  tf.transpose(a, (0, 2, 3, 1))
+            a = tf.nn.max_pool(a, ksize=[1, self.pooling_shape, self.pooling_shape, 1], strides=[1,self.pooling_shape,self.pooling_shape ,1], padding='VALID')
+            #print "POOL"
+        else:
+            if self.optimized:
+                a =  tf.transpose(a, (0, 2, 3, 1))
         a = tf.reshape(a, [-2])
         a = tf.transpose(a)
-        #Sigmoid
+
         a = self.activation(a, self.pool_size)
 
         net.varArrayAc.append(a)
@@ -303,6 +359,9 @@ class TensorFlowNNclass(object):
         #variables
         self.x = tf.placeholder("float64", name="x")
         self.y = tf.placeholder("float64", name="y")
+        model = tf.initialize_all_variables()
+
+
 
         #Initialize Weights
         for i in xrange(self.lastArrayNum):
@@ -378,8 +437,8 @@ class TensorFlowNNclass(object):
         # Error
         XENT = tf.cast(1.0 / self.options.minibatch_size * tf.reduce_sum(tf.pow(tf.sub(self.y, self.varArrayA[-1]),2) * 0.5), tf.float32)
         self.cost = XENT
-        print self.regularize
-        print self.cost
+        #print self.regularize
+        #print self.cost
         for err in self.regularize:
             self.cost += err
 
@@ -393,9 +452,23 @@ class TensorFlowNNclass(object):
         gradArray = []
         for i in xrange(self.lastArrayNum):
             for k in self.varWeights[i].keys():
+                #print self.varWeights[i][k]
                 gradArray.append(self.varWeights[i][k])
+                print tf.gradients(self.cost, gradArray)
         self.derivativesArray = tf.gradients(self.cost, gradArray)
 
+        #model = tf.initialize_all_variables()
+
+        #with tf.Session() as sess:
+        #    sess.run(model)
+        #    print(sess.run(gradArray[3]))
+            #print(sess.run(self.regularize[]))
+        #print gradArray
+        temp = 16
+        for i in range(0, len(self.derivativesArray)):
+            if self.derivativesArray[i] == None:
+                self.derivativesArray[i] = temp*1.0
+        print self.derivativesArray
         #RMS
         if self.options.rmsProp:
             for i in xrange(len(self.derivativesArray)):
@@ -403,14 +476,15 @@ class TensorFlowNNclass(object):
                 #print(gradArray[0].get_shape().as_list())
                 mmsp = tf.Variable(np.tile(0.0, gradArray[i].get_shape().as_list()).astype("float32"), name="mmsp%s" % (i + 1))
                 self.MMSprev.append(mmsp)
-                mmsn = self.options.rmsProp * mmsp + (1 - self.options.rmsProp) * self.derivativesArray[i]**2
+                print mmsp*self.options.rmsProp + (1 - self.options.rmsProp)
+                mmsn = self.options.rmsProp * mmsp + (1 - self.options.rmsProp) * tf.pow(self.derivativesArray[i], 2)
                 mmsn = tf.clip_by_value(mmsn, self.options.mmsmin, np.finfo(np.float32).max)
                 self.MMSnew.append(mmsn)
 
         #Update Values
         for i in xrange(len(self.derivativesArray)):
             if self.options.rmsProp:
-                updateVar = self.options.learnStep * self.derivativesArray[i] / self.MMSnew[i] ** 0.5
+                updateVar = self.options.learnStep * self.derivativesArray[i] / tf.pow(self.MMSnew[i], 0.5)
                 self.updatesArray.append((self.MMSprev[i], self.MMSnew[i]))
             else:
                 updateVar = self.options.learnStep * self.derivativesArray[i]
@@ -449,11 +523,11 @@ class TensorFlowNNclass(object):
 
     def paramGetter(self): # Returns the values of model parameters such as [w1, b1, w2, b2] etc.
         model = []
-        modell = T.initialize_all_variables()
+        modell = tf.initialize_all_variables()
         for i in xrange(self.lastArrayNum):  # Possible use len(self.varArrayB) or len(self.varArrayW) instead
             D = dict()
             for k in self.varWeights[i].keys():
-                with T.Session() as session:
+                with tf.Session() as session:
                     session.run(modell)
                     D[k] = session.run(self.varWeights[i][k])
                 #D[k] = self.varWeights[i][k].get_value()
