@@ -3,7 +3,7 @@
 DRL (Deep Reinforcement Learning Agent) is an implementation of the deep reinforcement learning algorithm, described in [Playing Atari with Deep Reinforcement Learning](http://www.cs.toronto.edu/~vmnih/docs/dqn.pdf)
 paper by [DeepMind](http://deepmind.com/).
 The original implementation of the [DRL project](https://github.com/DSG-SoftServe/DRL) was in theano and was based 
-on [TNNF](http://tnnf.readthedocs.org/en/latest/)-Tiny Neural Net Framework which used theano library for GPU computing.
+on [TNNF](http://tnnf.readthedocs.org/en/latest/) - Tiny Neural Net Framework which used theano library for GPU computing.
 
 The Tiny Neural Net Framework was revised to work on TensorFlow and hence this DRL project works on TensorFlow instead of theano.
 DRL is currently tested on Ubuntu 14.04 on GPU.
@@ -17,4 +17,15 @@ To install **DRL** on Ubuntu:
 sudo apt-get install python-pil python-numpy python-scipy python-dev python-pip python-nose g++ libopenblas-dev git libsdl1.2-dev libsdl-image1.2-dev libsdl-gfx1.2-dev python-matplotlib libyaml-dev
 sudo pip install -U numpy
 sudo pip install -U pillow==2.7.0
+```
+To install TensorFlow, please follow the instructions on the [TensorFlow webpage](https://www.tensorflow.org/versions/r0.7/get_started/os_setup.html#download-and-setup).<br />
+**Note: DRL requires CUDA and please follow the instructions to install CUDA through TensorFlow page.<br />
+Then navigate to DRL-TensorFlow/emulator directory and run:
+```
+cd DRL
+bash ./install.sh
+```
+To launch the training, run the following:
+```
+python main_exp.py
 ```
